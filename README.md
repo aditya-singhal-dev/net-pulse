@@ -112,19 +112,34 @@ The database saves each cycle, its probe rows, and its assessment in one transac
 
 Python handles orchestration, socket probes, and process timeouts. Streamlit and Plotly provide the UI and interactive charts. psutil supplies interface counters, dnspython performs DNS lookups, and the macOS command-line tools send ICMP and traceroute probes. Scapy is optional. SQLite persists results, pandas prepares report data, and pytest covers the offline test suite.
 
+## Additional measurements
+
+| Metric | Measurement |
+| --- | --- |
+| Link capacity | Reported local link rate in Mbps. For active Wi-Fi, CoreWLAN supplies the current transmit link rate when available. Otherwise NetPulse uses the OS interface speed. This estimates the local link's capacity, while ISP speed and application throughput require separate measurements. |
+| HTTP response time | HTTPS HEAD time to first byte after connection setup for `https://example.com/`, using macOS curl with a deadline. The HTTP status is also recorded. This covers one reference website and includes request and response transit. |
+| TCP retransmission rate | The increase in retransmitted TCP data packets divided by the increase in all outgoing TCP packets during the cycle, using macOS system-wide counters. A missing counter, reset, or zero denominator makes the rate unavailable. |
+| Wi-Fi RSSI | Signal strength in dBm from CoreWLAN, matched to the active Wi-Fi interface. It is unavailable on Ethernet or when macOS provides no reading. |
+| DNS failure rate | Unsuccessful DNS probes divided by attempted lookups in the cycle, expressed as a percentage. |
+
 ## Health score
 
 NetPulse's 0–100 score is a project-defined diagnostic heuristic. It summarizes the configured probes and depends on the targets and protocols that were measurable.
 
 | Component | Weight | Full credit | Zero credit |
 | --- | ---: | --- | --- |
-| ICMP mean RTT per target | 20% | At or below 50 ms | At or above 300 ms |
-| ICMP packet loss per target | 25% | 0% | At or above 50% |
-| ICMP jitter per target | 10% | At or below 10 ms | At or above 80 ms |
-| DNS response time per domain | 20% | At or below 50 ms | At or above 500 ms, or a timeout, NXDOMAIN, or no address answer |
-| TCP connections per endpoint | 25% | Successful connection | Refused, timed out, or unreachable |
+| ICMP mean RTT per target | 15% | At or below 50 ms | At or above 300 ms |
+| ICMP packet loss per target | 20% | 0% | At or above 50% |
+| ICMP jitter per target | 8% | At or below 10 ms | At or above 80 ms |
+| Successful DNS lookup time per domain | 10% | At or below 50 ms | At or above 500 ms |
+| TCP connections per endpoint | 20% | Successful connection | Refused, timed out, or unreachable |
+| Link capacity | 5% | At or above 100 Mbps | At or below 10 Mbps |
+| HTTP response time | 8% | At or below 150 ms | At or above 1,000 ms |
+| TCP retransmission rate | 5% | 0% | At or above 5% |
+| Wi-Fi RSSI | 4% | At or above −60 dBm | At or below −85 dBm |
+| DNS failure rate | 5% | 0% | 100% |
 
-Timed and loss components decrease linearly between their cutoffs. NetPulse averages available target scores within each component equally, then divides the weighted total by the sum of the available weights and rounds to the nearest integer. The score requires at least 45 percentage points of measured weight and evidence from at least two protocol families. Missing timings, execution errors, and TCP probes blocked at the DNS stage contribute no component evidence for those measurements. Measured ICMP loss can still affect the score when latency and jitter are unavailable.
+Numeric components are scored linearly between their cutoffs. NetPulse averages available target scores within each component equally, then divides the weighted total by the sum of the available weights and rounds to the nearest integer. The score requires at least 35 percentage points of measured weight and evidence from at least two of ICMP, DNS, and TCP. Previously saved scores use their original scoring formula. Unavailable readings are excluded. DNS failures contribute through the failure-rate component, and TCP probes blocked at the DNS stage are excluded from the TCP connection component. Measured ICMP loss can still affect the score when latency and jitter are unavailable.
 
 Categories are **Excellent** (90–100), **Good** (75–89), **Fair** (50–74), **Poor** (25–49), and **Critical** (0–24). The CLI exposes measured weight and per-component scores so a result based on partial coverage is visible.
 

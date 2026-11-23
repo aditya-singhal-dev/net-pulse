@@ -8,14 +8,20 @@ from sqlite3 import Row
 
 import pandas as pd
 
+from core.extra_metrics import HTTP_URL
 from core.health_score import score_category
 from database.db import Database
 
 REPORT_LIMIT = 500
+EXTENDED_FIELDS = (
+    "link_capacity_mbps", "http_response_ms", "http_status", "tcp_retransmission_percent",
+    "wifi_rssi_dbm", "dns_failure_percent",
+)
 CYCLE_FIELDS = (
     "cycle_id", "measured_at_utc", "interface", "interface_state", "local_addresses", "gateway",
     "upload_mbps", "download_mbps", "total_sent_bytes", "total_received_bytes",
     "health_score", "health_category", "diagnostic_status", "diagnostic_summary",
+    *EXTENDED_FIELDS, "http_target",
 )
 PROBE_FIELDS = (
     "cycle_id", "protocol", "target", "port", "probe_status", "latency_ms", "min_rtt_ms",
@@ -33,6 +39,11 @@ STAT_METRICS = (
     ("upload_mbps", "Local upload per cycle", "Mbps"),
     ("download_mbps", "Local download per cycle", "Mbps"),
     ("health_score", "Health score per cycle", "points"),
+    ("link_capacity_mbps", "Local link capacity", "Mbps"),
+    ("http_response_ms", "HTTP time to first byte", "ms"),
+    ("tcp_retransmission_percent", "TCP retransmissions", "%"),
+    ("wifi_rssi_dbm", "Wi-Fi signal strength", "dBm"),
+    ("dns_failure_percent", "DNS failures", "%"),
 )
 
 
@@ -51,6 +62,8 @@ class Report:
 
 def _cycle_record(row: Row, diagnosis: dict) -> dict:
     return {
+        **{key: row[key] for key in EXTENDED_FIELDS},
+        "http_target": HTTP_URL if row["cycle_id"] is not None else None,
         "cycle_id": row["id"], "measured_at_utc": row["timestamp"], "interface": row["interface"],
         "interface_state": {0: "Down", 1: "Up"}.get(row["interface_up"], "Unknown"),
         "local_addresses": ", ".join(json.loads(row["addresses"])),
@@ -168,6 +181,7 @@ def export_html(report: Report) -> bytes:
         ("Summary statistics", report.statistics),
         ("Diagnostic findings", report.findings),
         ("Recorded cycles", report.cycles[list(cycle_metrics)]),
+        ("Additional measurements", report.cycles[["cycle_id", *EXTENDED_FIELDS, "http_target"]]),
         ("Interface details", report.cycles[["cycle_id", "interface", "interface_state",
                                             "local_addresses", "gateway", "total_sent_bytes",
                                             "total_received_bytes", "diagnostic_summary"]]),

@@ -48,6 +48,15 @@ CREATE TABLE IF NOT EXISTS assessments (
     health TEXT NOT NULL,
     diagnosis TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS extra_metrics (
+    cycle_id INTEGER PRIMARY KEY REFERENCES cycles(id) ON DELETE CASCADE,
+    link_capacity_mbps REAL,
+    http_response_ms REAL,
+    http_status INTEGER,
+    tcp_retransmission_percent REAL,
+    wifi_rssi_dbm INTEGER,
+    dns_failure_percent REAL
+);
 CREATE TABLE IF NOT EXISTS dashboard_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     settings TEXT NOT NULL
@@ -115,6 +124,15 @@ class Database:
                 records,
             )
             assert cycle_id is not None
+            if cycle.extra is not None:
+                connection.execute(
+                    """INSERT INTO extra_metrics (
+                       cycle_id, link_capacity_mbps, http_response_ms, http_status,
+                       tcp_retransmission_percent, wifi_rssi_dbm, dns_failure_percent
+                       ) VALUES (:cycle_id, :link_capacity_mbps, :http_response_ms, :http_status,
+                                 :tcp_retransmission_percent, :wifi_rssi_dbm, :dns_failure_percent)""",
+                    {"cycle_id": cycle_id, **asdict(cycle.extra)},
+                )
             if assessment is not None:
                 connection.execute(
                     "INSERT INTO assessments (cycle_id, health, diagnosis) VALUES (?, ?, ?)",
@@ -125,8 +143,9 @@ class Database:
     def latest(self) -> sqlite3.Row | None:
         with closing(self._connect()) as connection:
             return connection.execute(
-                """SELECT cycles.*, assessments.health, assessments.diagnosis
+                """SELECT cycles.*, assessments.health, assessments.diagnosis, extra_metrics.*
                    FROM cycles LEFT JOIN assessments ON assessments.cycle_id = cycles.id
+                   LEFT JOIN extra_metrics ON extra_metrics.cycle_id = cycles.id
                    ORDER BY cycles.timestamp DESC, cycles.id DESC LIMIT 1"""
             ).fetchone()
 
@@ -151,8 +170,9 @@ class Database:
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN")
             cycles = connection.execute(
-                """SELECT cycles.*, assessments.health, assessments.diagnosis
+                """SELECT cycles.*, assessments.health, assessments.diagnosis, extra_metrics.*
                    FROM cycles LEFT JOIN assessments ON assessments.cycle_id = cycles.id
+                   LEFT JOIN extra_metrics ON extra_metrics.cycle_id = cycles.id
                    WHERE timestamp >= ? AND timestamp < ?
                    ORDER BY timestamp DESC, cycles.id DESC LIMIT ?""",
                 (start, end, limit + 1),

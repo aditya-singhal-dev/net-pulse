@@ -7,6 +7,7 @@ from time import sleep
 
 from config.settings import Settings
 from core import bandwidth_monitor, dns_analyzer, ping_monitor, tcp_checker
+from core.extra_metrics import ExtraMetrics, http_response, link_metrics, retransmission_percent, tcp_counters
 from core.network_info import NetworkInfo, get_network_info
 
 
@@ -19,6 +20,8 @@ class DiagnosticCycle:
     dns: tuple[dns_analyzer.DNSResult, ...]
     tcp: tuple[tcp_checker.TCPResult, ...]
 
+    extra: ExtraMetrics | None = None
+
     @property
     def status(self) -> str:
         if any(probe.status == "ok" for probe in self.tcp):
@@ -30,7 +33,10 @@ def collect(settings: Settings) -> DiagnosticCycle:
     timestamp = datetime.now(timezone.utc).isoformat()
     network = get_network_info()
     first = bandwidth_monitor.sample(network.interface)
+    before = tcp_counters()
     with ThreadPoolExecutor(max_workers=6) as executor:
+        http_job = executor.submit(http_response, settings.timeout)
+        link_job = executor.submit(link_metrics, network.interface)
         ping_jobs = [
             executor.submit(ping_monitor.ping, host, settings.ping_count, settings.timeout)
             for host in settings.ping_targets
@@ -46,7 +52,12 @@ def collect(settings: Settings) -> DiagnosticCycle:
         if first is not None:
             sleep(1)
         bandwidth = bandwidth_monitor.calculate(first, bandwidth_monitor.sample(network.interface))
-        return DiagnosticCycle(
-            timestamp, network, bandwidth, tuple(job.result() for job in ping_jobs),
-            tuple(job.result() for job in dns_jobs), tuple(job.result() for job in tcp_jobs),
-        )
+        ping = tuple(job.result() for job in ping_jobs)
+        dns = tuple(job.result() for job in dns_jobs)
+        tcp = tuple(job.result() for job in tcp_jobs)
+        http_ms, status = http_job.result()
+        capacity, rssi = link_job.result()
+        failure_rate = 100 * sum(probe.status != "ok" for probe in dns) / len(dns) if dns else None
+        extra = ExtraMetrics(capacity, http_ms, status, retransmission_percent(before, tcp_counters()),
+                             rssi, failure_rate)
+        return DiagnosticCycle(timestamp, network, bandwidth, ping, dns, tcp, extra)

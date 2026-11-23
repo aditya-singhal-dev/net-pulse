@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from config.settings import Settings
+from core.extra_metrics import HTTP_URL
 from core.health_score import score_category
 from core.monitoring_service import MonitoringService, MonitorStatus
 from ui.monitoring import show_status
@@ -43,17 +44,17 @@ STYLE = """
 .np-warn { color: #ffcf87; background: #3c3023; }
 .np-unknown { color: #c4d1e4; background: #253349; }
 @media (max-width: 960px) {
-    .st-key-overview_metrics [data-testid="stHorizontalBlock"] {
+    :is(.st-key-overview_metrics, .st-key-additional_metrics) [data-testid="stHorizontalBlock"] {
         display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
     }
     .st-key-performance [data-testid="stHorizontalBlock"] {
         display: grid; grid-template-columns: minmax(0, 1fr);
     }
-    .st-key-overview_metrics [data-testid="stColumn"],
+    :is(.st-key-overview_metrics, .st-key-additional_metrics) [data-testid="stColumn"],
     .st-key-performance [data-testid="stColumn"] { width: 100%; min-width: 0; }
 }
 @media (max-width: 540px) {
-    .st-key-overview_metrics [data-testid="stHorizontalBlock"] {
+    :is(.st-key-overview_metrics, .st-key-additional_metrics) [data-testid="stHorizontalBlock"] {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
@@ -140,6 +141,21 @@ def _metrics(cycle: sqlite3.Row, probes: list[sqlite3.Row]) -> None:
     upload.metric("Local upload", _format(cycle["upload_mbps"], "Mbps"), border=True)
     download.metric("Local download", _format(cycle["download_mbps"], "Mbps"), border=True)
     st.caption("Local interface traffic during the sample window. ISP line capacity is a separate measurement.")
+    if cycle["cycle_id"] is not None:
+        st.subheader("Additional measurements")
+        metrics = (
+            ("Link capacity", "link_capacity_mbps", "Mbps", "Reported link rate for the active local interface."),
+            ("HTTP response", "http_response_ms", "ms", f"Time to first byte after connection setup for a HEAD request to {HTTP_URL}."),
+            ("TCP retransmissions", "tcp_retransmission_percent", "%", "System-wide retransmitted TCP data packets as a share of all TCP packets sent during the cycle."),
+            ("Wi-Fi RSSI", "wifi_rssi_dbm", "dBm", "Signal strength for the active Wi-Fi interface. Closer to zero is stronger."),
+            ("DNS failures", "dns_failure_percent", "%", "Share of DNS probes that did not resolve successfully."),
+        )
+        with st.container(key="additional_metrics"):
+            for column, (label, key, unit, explanation) in zip(st.columns(len(metrics)), metrics):
+                column.metric(label, _format(cycle[key], unit), help=explanation, border=True)
+        if cycle["http_status"] is not None:
+            st.caption(f"HTTP probe · {HTTP_URL} · status {cycle['http_status']}")
+
 
 
 def _timing_chart(rows: list[sqlite3.Row], protocol: str | None = None) -> None:

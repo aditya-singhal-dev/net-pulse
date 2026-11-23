@@ -66,7 +66,7 @@ It sends probes with increasing TTL or IPv6 hop limit. A router that drops a pro
 NetPulse subtracts two cumulative byte readings for the same interface, multiplies the byte difference by eight, and divides by the actual elapsed seconds and one million.
 
 **9. Why does the health score sometimes disappear?**  
-The heuristic needs at least 45 percentage points of measurable weight and two protocol families. Unavailable measurements are excluded. An explicit failed probe can still contribute a penalty where the scoring rules define one.
+The heuristic needs at least 35 percentage points of measurable weight and evidence from two of ICMP, DNS, and TCP. Unavailable measurements are excluded. An explicit failed probe can still contribute a penalty where the scoring rules define one.
 
 **10. How does the app avoid duplicate monitoring threads?**  
 Streamlit caches one monitoring service per database path in the server process. The service uses a lock to reserve its worker slot and an event to signal stop. The UI reads committed SQLite results independently.
